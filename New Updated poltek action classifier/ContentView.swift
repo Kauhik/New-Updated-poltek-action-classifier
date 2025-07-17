@@ -1,3 +1,6 @@
+// File: ContentView.swift
+// Drop‑in replacement so the preview image rotates right‑side up.
+
 import SwiftUI
 
 struct ContentView: View {
@@ -6,11 +9,12 @@ struct ContentView: View {
 
     var body: some View {
         ZStack {
-            // camera + pose preview
-            if let image = vm.previewImage {
-                Image(uiImage: image)
+            if let uiImage = vm.previewImage {
+                Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFill()
+                    // rotate 180° so that upside‑down frames appear upright
+                    .rotationEffect(.degrees(180))
                     .edgesIgnoringSafeArea(.all)
             } else {
                 Color.black.edgesIgnoringSafeArea(.all)
@@ -19,13 +23,10 @@ struct ContentView: View {
             VStack {
                 Spacer()
 
-                // prediction labels
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(vm.actionLabel)
-                            .font(.headline)
-                        Text(vm.confidenceLabel)
-                            .font(.subheadline)
+                        Text(vm.actionLabel).font(.headline)
+                        Text(vm.confidenceLabel).font(.subheadline)
                     }
                     .foregroundColor(.white)
                     .padding(8)
@@ -36,14 +37,11 @@ struct ContentView: View {
                 }
                 .padding(.horizontal)
 
-                // controls
                 HStack {
-                    Button("Flip") {
-                        vm.toggleCamera()
-                    }
-                    .padding()
-                    .background(Color.black.opacity(0.5))
-                    .cornerRadius(10)
+                    Button("Flip") { vm.toggleCamera() }
+                        .padding()
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(10)
 
                     Spacer()
 
@@ -59,9 +57,7 @@ struct ContentView: View {
             }
         }
         .onAppear { vm.start() }
-        .sheet(isPresented: $showingSummary, onDismiss: {
-            vm.start()
-        }) {
+        .sheet(isPresented: $showingSummary, onDismiss: { vm.start() }) {
             SummaryView(actionFrameCounts: vm.actionFrameCounts)
         }
     }
