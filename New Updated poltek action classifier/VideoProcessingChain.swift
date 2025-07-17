@@ -1,13 +1,12 @@
 // File: VideoProcessingChain.swift
-// See LICENSE folder for this sample’s licensing information.
-// Abstract:
-// Builds a chain of Combine publisher-subscribers upon the video capture
-// session's video frame publisher.
+// Builds a chain of Combine publisher‑subscribers upon the video capture session’s
+// frame publisher, but throttles to ~15 fps to avoid overloading Vision & UI.
 
 import Vision
 import Combine
 import CoreImage
 
+@MainActor
 protocol VideoProcessingChainDelegate: AnyObject {
     func videoProcessingChain(_ chain: VideoProcessingChain,
                               didDetect poses: [Pose]?,
@@ -17,36 +16,51 @@ protocol VideoProcessingChainDelegate: AnyObject {
                               for frames: Int)
 }
 
-struct VideoProcessingChain {
+class VideoProcessingChain {
     weak var delegate: VideoProcessingChainDelegate?
 
-    var upstreamFramePublisher: AnyPublisher<Frame, Never>! {
+    var upstreamFramePublisher: AnyPublisher<Frame, Never>? {
         didSet { buildProcessingChain() }
     }
 
     private var frameProcessingChain: AnyCancellable?
-
-    private let humanBodyPoseRequest = VNDetectHumanBodyPoseRequest()
     private let actionClassifier = PoltekActionClassifierORGINAL.shared
     private let predictionWindowSize: Int
     private let windowStride = 10
 
-    /// Reuse one CIContext for all frames to avoid per‑frame allocations
     private let ciContext = CIContext(options: nil)
+    private let visionQueue = DispatchQueue(
+        label: "VideoProcessingChain.VisionQueue", qos: .userInitiated
+    )
     private var performanceReporter = PerformanceReporter()
 
     init() {
         predictionWindowSize = actionClassifier.calculatePredictionWindowSize()
     }
-}
 
-extension VideoProcessingChain {
-    private mutating func buildProcessingChain() {
-        guard upstreamFramePublisher != nil else { return }
+    private func buildProcessingChain() {
+        guard let publisher = upstreamFramePublisher else { return }
 
-        frameProcessingChain = upstreamFramePublisher
-            .compactMap(imageFromFrame)
-            .map(findPosesInFrame)
+        frameProcessingChain = publisher
+            // run on our Vision queue
+            .receive(on: visionQueue)
+            // throttle down to ~15 fps
+            .throttle(for: .milliseconds(66),
+                      scheduler: visionQueue,
+                      latest: true)
+            // convert buffer → CGImage
+            .compactMap { buffer -> CGImage? in
+                guard let imageBuffer = buffer.imageBuffer else { return nil }
+                let ciImage = CIImage(cvPixelBuffer: imageBuffer)
+                return self.ciContext.createCGImage(ciImage,
+                                               from: ciImage.extent)
+            }
+            // detect poses
+            .compactMap { [weak self] frame -> [Pose]? in
+                guard let self = self else { return nil }
+                return self.detectPoses(in: frame)
+            }
+            // ML windowing & prediction
             .map(isolateLargestPose)
             .map(multiArrayFromPose)
             .scan([MLMultiArray?](), gatherWindow)
@@ -54,21 +68,19 @@ extension VideoProcessingChain {
             .map(predictActionWithWindow)
             .sink(receiveValue: sendPrediction)
     }
-}
 
-extension VideoProcessingChain {
-    private func imageFromFrame(_ buffer: Frame) -> CGImage? {
-        performanceReporter?.incrementFrameCount()
-        guard let imageBuffer = buffer.imageBuffer else { return nil }
-        let ciImage = CIImage(cvPixelBuffer: imageBuffer)
-        return ciContext.createCGImage(ciImage, from: ciImage.extent)
-    }
-
-    private func findPosesInFrame(_ frame: CGImage) -> [Pose]? {
-        let handler = VNImageRequestHandler(cgImage: frame)
-        do { try handler.perform([humanBodyPoseRequest]) }
-        catch { assertionFailure("Pose request failed: \(error)") }
-        let poses = Pose.fromObservations(humanBodyPoseRequest.results)
+    private func detectPoses(in frame: CGImage) -> [Pose]? {
+        let request = VNDetectHumanBodyPoseRequest()
+        let handler = VNImageRequestHandler(cgImage: frame,
+                                            orientation: .up,
+                                            options: [:])
+        do { try handler.perform([request]) }
+        catch {
+            assertionFailure("Pose request failed: \(error)")
+            return nil
+        }
+        let observations = request.results as? [VNHumanBodyPoseObservation]
+        let poses = Pose.fromObservations(observations)
         DispatchQueue.main.async {
             self.delegate?.videoProcessingChain(self,
                                                 didDetect: poses,

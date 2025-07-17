@@ -1,10 +1,18 @@
+// File: ActionClassifierViewModel.swift
+// See LICENSE folder for this sample’s licensing information.
+// Abstract:
+// Hosts the capture + processing chain and bridges to SwiftUI.
+
 import SwiftUI
 import Combine
 import UIKit
 
 @MainActor
-class ActionClassifierViewModel: NSObject, ObservableObject {
-    // Published for the SwiftUI view
+class ActionClassifierViewModel: NSObject,
+                                  ObservableObject,
+                                  VideoCaptureDelegate,
+                                  VideoProcessingChainDelegate {
+    // MARK: - Published UI state
     @Published var previewImage: UIImage?
     @Published var actionLabel: String = ActionPrediction.startingPrediction.label
     @Published var confidenceLabel: String = "Observing..."
@@ -15,49 +23,29 @@ class ActionClassifierViewModel: NSObject, ObservableObject {
 
     override init() {
         super.init()
-
         // hook up delegates
         videoCapture.delegate = self
         videoProcessingChain.delegate = self
     }
 
-    /// Start the capture + processing
+    /// Start capture + processing
     func start() {
         videoCapture.updateDeviceOrientation()
         videoCapture.isEnabled = true
     }
 
-    /// Stop capture (e.g. while showing summary)
+    /// Stop capture (e.g. when showing a summary)
     func stop() {
         videoCapture.isEnabled = false
     }
 
-    /// Flip between front/back
+    /// Flip between front/back camera
     func toggleCamera() {
         videoCapture.toggleCameraSelection()
     }
 
-    // Draw poses onto the raw CGImage
-    private func drawPoses(_ poses: [Pose]?, onto frame: CGImage) -> UIImage {
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1.0
-        let size = CGSize(width: frame.width, height: frame.height)
-        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+    // MARK: - VideoCaptureDelegate
 
-        let uiImage = renderer.image { ctx in
-            let cg = ctx.cgContext
-            // draw the raw camera
-            cg.draw(frame, in: CGRect(origin: .zero, size: size))
-            // overlay poses
-            let transform = CGAffineTransform(scaleX: size.width, y: size.height)
-            poses?.forEach { $0.drawWireframeToContext(cg, applying: transform) }
-        }
-        return uiImage
-    }
-}
-
-// MARK: - VideoCaptureDelegate
-extension ActionClassifierViewModel: VideoCaptureDelegate {
     func videoCapture(_ videoCapture: VideoCapture,
                       didCreate framePublisher: FramePublisher) {
         // reset labels
@@ -66,13 +54,13 @@ extension ActionClassifierViewModel: VideoCaptureDelegate {
         // feed into processing chain
         videoProcessingChain.upstreamFramePublisher = framePublisher
     }
-}
 
-// MARK: - VideoProcessingChainDelegate
-extension ActionClassifierViewModel: VideoProcessingChainDelegate {
+    // MARK: - VideoProcessingChainDelegate
+
     func videoProcessingChain(_ chain: VideoProcessingChain,
                               didDetect poses: [Pose]?,
                               in frame: CGImage) {
+        // draw wireframe on the camera frame
         let img = drawPoses(poses, onto: frame)
         previewImage = img
     }
@@ -88,5 +76,25 @@ extension ActionClassifierViewModel: VideoProcessingChainDelegate {
         // update labels
         actionLabel = actionPrediction.label
         confidenceLabel = actionPrediction.confidenceString ?? "Observing..."
+    }
+
+    // MARK: - Drawing
+
+    private func drawPoses(_ poses: [Pose]?, onto frame: CGImage) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let size = CGSize(width: frame.width, height: frame.height)
+        let renderer = UIGraphicsImageRenderer(size: size, format: format)
+
+        return renderer.image { ctx in
+            let cg = ctx.cgContext
+            // draw the raw camera
+            cg.draw(frame, in: CGRect(origin: .zero, size: size))
+            // overlay wireframe
+            let transform = CGAffineTransform(scaleX: size.width,
+                                              y: size.height)
+            poses?.forEach { $0.drawWireframeToContext(cg,
+                                                       applying: transform) }
+        }
     }
 }

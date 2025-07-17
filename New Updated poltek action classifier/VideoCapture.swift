@@ -2,29 +2,32 @@
 // See LICENSE folder for this sample’s licensing information.
 // Abstract:
 // Convenience class that configures the video capture session and
-// creates a (video) frame publisher.
+// publishes frames at a capped 30 fps.
 
 import UIKit
 import Combine
 import AVFoundation
 
-/// - Tag: Frame
-typealias Frame = CMSampleBuffer
-typealias FramePublisher = AnyPublisher<Frame, Never>
-
+@MainActor
 protocol VideoCaptureDelegate: AnyObject {
-    /// Called when VideoCapture creates a new frame publisher.
     func videoCapture(_ videoCapture: VideoCapture,
                       didCreate framePublisher: FramePublisher)
 }
 
+typealias Frame = CMSampleBuffer
+typealias FramePublisher = AnyPublisher<Frame, Never>
+
+@MainActor
 class VideoCapture: NSObject {
     weak var delegate: VideoCaptureDelegate! {
         didSet { createVideoFramePublisher() }
     }
 
     var isEnabled = true {
-        didSet { isEnabled ? enableCaptureSession() : disableCaptureSession() }
+        didSet {
+            if isEnabled { enableCaptureSession() }
+            else        { disableCaptureSession() }
+        }
     }
 
     private var cameraPosition = AVCaptureDevice.Position.front {
@@ -38,40 +41,52 @@ class VideoCapture: NSObject {
     private let captureSession = AVCaptureSession()
     private var framePublisher: PassthroughSubject<Frame, Never>?
     private let videoCaptureQueue = DispatchQueue(
-        label: "Video Capture Queue", qos: .userInitiated
+        label: "VideoCapture.Queue", qos: .userInitiated
     )
 
-    private var horizontalFlip: Bool { cameraPosition == .front }
-    private var videoStabilizationEnabled = false
+    // MARK: – Public API
 
+    /// Flip front/back
     func toggleCameraSelection() {
         cameraPosition = (cameraPosition == .back) ? .front : .back
     }
 
-    /// Map physical device orientation directly to videoOrientation
+    /// Update orientation from UIDevice
     func updateDeviceOrientation() {
         switch UIDevice.current.orientation {
-            case .portrait, .faceUp, .faceDown, .unknown:
-                orientation = .portrait
-            case .portraitUpsideDown:
-                orientation = .portraitUpsideDown
-            case .landscapeLeft:
-                orientation = .landscapeLeft
-            case .landscapeRight:
-                orientation = .landscapeRight
-            @unknown default:
-                orientation = .portrait
+        case .portrait, .faceUp, .faceDown, .unknown:
+            orientation = .portrait
+        case .portraitUpsideDown:
+            orientation = .portraitUpsideDown
+        case .landscapeLeft:
+            orientation = .landscapeLeft
+        case .landscapeRight:
+            orientation = .landscapeRight
+        @unknown default:
+            orientation = .portrait
         }
     }
 
+    // MARK: – Capture Start/Stop
+
     private func enableCaptureSession() {
-        if !captureSession.isRunning { captureSession.startRunning() }
+        videoCaptureQueue.async {
+            if !self.captureSession.isRunning {
+                self.captureSession.startRunning()
+            }
+        }
     }
 
     private func disableCaptureSession() {
-        if captureSession.isRunning { captureSession.stopRunning() }
+        videoCaptureQueue.async {
+            if self.captureSession.isRunning {
+                self.captureSession.stopRunning()
+            }
+        }
     }
 }
+
+// MARK: – AVCapture Output Delegate
 
 extension VideoCapture: AVCaptureVideoDataOutputSampleBufferDelegate {
     func captureOutput(_ output: AVCaptureOutput,
@@ -81,56 +96,60 @@ extension VideoCapture: AVCaptureVideoDataOutputSampleBufferDelegate {
     }
 }
 
+// MARK: – Configuration
+
 extension VideoCapture {
     private func createVideoFramePublisher() {
-        guard let videoDataOutput = configureCaptureSession() else { return }
-
+        guard let output = configureCaptureSession() else { return }
         let passthrough = PassthroughSubject<Frame, Never>()
         framePublisher = passthrough
-        videoDataOutput.setSampleBufferDelegate(self, queue: videoCaptureQueue)
-        delegate.videoCapture(self,
-                             didCreate: passthrough.eraseToAnyPublisher())
+        output.setSampleBufferDelegate(self, queue: videoCaptureQueue)
+        delegate.videoCapture(self, didCreate: passthrough.eraseToAnyPublisher())
     }
 
     private func configureCaptureSession() -> AVCaptureVideoDataOutput? {
         disableCaptureSession()
-        guard isEnabled else { return nil }
-        defer { enableCaptureSession() }
-
         captureSession.beginConfiguration()
-        defer { captureSession.commitConfiguration() }
+        defer {
+            captureSession.commitConfiguration()
+            enableCaptureSession()
+        }
 
-        // use your model’s frameRate
-        let modelFrameRate = PoltekActionClassifierORGINAL.frameRate
+        // Cap at 30 fps
+        let desiredFPS: Double = 30.0
         let input = AVCaptureDeviceInput.createCameraInput(
-            position: cameraPosition, frameRate: modelFrameRate
+            position: cameraPosition,
+            frameRate: desiredFPS
         )
         let output = AVCaptureVideoDataOutput.withPixelFormatType(
             kCVPixelFormatType_32BGRA
         )
-        guard configureCaptureConnection(input, output) else { return nil }
+
+        guard configureCaptureConnection(input: input, output: output) else {
+            return nil
+        }
         return output
     }
 
     private func configureCaptureConnection(
-        _ input: AVCaptureDeviceInput?,
-        _ output: AVCaptureVideoDataOutput?
+        input: AVCaptureDeviceInput?,
+        output: AVCaptureVideoDataOutput?
     ) -> Bool {
-        guard let input = input, let output = output else { return false }
+        guard let inp = input, let out = output else { return false }
 
-        captureSession.inputs.forEach { captureSession.removeInput($0) }
+        captureSession.inputs.forEach  { captureSession.removeInput($0) }
         captureSession.outputs.forEach { captureSession.removeOutput($0) }
 
-        guard captureSession.canAddInput(input),
-              captureSession.canAddOutput(output) else {
+        guard captureSession.canAddInput(inp),
+              captureSession.canAddOutput(out) else {
             print("Capture session not compatible")
             return false
         }
-        captureSession.addInput(input)
-        captureSession.addOutput(output)
 
-        // ⬇️ get the *video* connection directly from the output
-        guard let connection = output.connection(with: .video) else {
+        captureSession.addInput(inp)
+        captureSession.addOutput(out)
+
+        guard let connection = out.connection(with: .video) else {
             print("No video connection found")
             return false
         }
@@ -138,15 +157,9 @@ extension VideoCapture {
         if connection.isVideoOrientationSupported {
             connection.videoOrientation = orientation
         }
-        if connection.isVideoMirroringSupported {
-            connection.isVideoMirrored = horizontalFlip
-        }
-        if connection.isVideoStabilizationSupported {
-            connection.preferredVideoStabilizationMode =
-                videoStabilizationEnabled ? .standard : .off
-        }
+        connection.isVideoMirrored = false  // no flip
 
-        output.alwaysDiscardsLateVideoFrames = true
+        out.alwaysDiscardsLateVideoFrames = true
         return true
     }
 }
