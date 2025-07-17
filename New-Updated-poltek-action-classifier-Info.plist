@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>import SwiftUI
+import Combine
+import AVFoundation
+
+class ActionClassifierViewModel: NSObject, ObservableObject {
+    @Published var latestPoses: [Pose]?   = nil
+    @Published var actionLabel: String    = ActionPrediction.startingPrediction.label
+    @Published var confidenceLabel: String = "Observing..."
+    @Published var actionFrameCounts = [String: Int]()
+
+    let videoCapture = VideoCapture()
+    private var videoProcessingChain = VideoProcessingChain()
+
+    override init() {
+        super.init()
+        videoCapture.delegate       = self
+        videoProcessingChain.delegate = self
+    }
+
+    func start() {
+        videoCapture.updateDeviceOrientation()
+        videoCapture.isEnabled = true
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+    }
+
+    func stop() {
+        videoCapture.isEnabled = false
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
+    }
+
+    func toggleCamera() {
+        videoCapture.toggleCameraSelection()
+    }
+
+    /// now compiles because captureSession is internal
+    var captureSession: AVCaptureSession {
+        videoCapture.captureSession
+    }
+}
+
+// MARK: – VideoCaptureDelegate
+extension ActionClassifierViewModel: VideoCaptureDelegate {
+    func videoCapture(_ videoCapture: VideoCapture,
+                      didCreate framePublisher: FramePublisher) {
+        actionLabel     = ActionPrediction.startingPrediction.label
+        confidenceLabel = "Observing..."
+        videoProcessingChain.upstreamFramePublisher = framePublisher
+    }
+}
+
+// MARK: – VideoProcessingChainDelegate
+extension ActionClassifierViewModel: VideoProcessingChainDelegate {
+    func videoProcessingChain(_ chain: VideoProcessingChain,
+                              didDetect poses: [Pose]?,
+                              in frame: CGImage) {
+        latestPoses = poses
+    }
+
+    func videoProcessingChain(_ chain: VideoProcessingChain,
+                              didPredict actionPrediction: ActionPrediction,
+                              for frameCount: Int) {
+        if actionPrediction.isModelLabel {
+            let total = (actionFrameCounts[actionPrediction.label] ?? 0) + frameCount
+            actionFrameCounts[actionPrediction.label] = total
+        }
+        actionLabel     = actionPrediction.label
+        confidenceLabel = actionPrediction.confidenceString ?? "Observing..."
+   </key>
+	<string></string>
+</dict>
+</plist>

@@ -29,9 +29,30 @@
 		80ED427A2E2788EE00B3CA32 /* New Updated poltek action classifierUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "New Updated poltek action classifierUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		80ED43E32E27AB6300B3CA32 /* Exceptions for "New Updated poltek action classifier" folder in "New Updated poltek action classifierTests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				PoltekActionClassifierORGINAL.mlmodel,
+			);
+			target = 80ED426F2E2788EE00B3CA32 /* New Updated poltek action classifierTests */;
+		};
+		80ED43E42E27AB6300B3CA32 /* Exceptions for "New Updated poltek action classifier" folder in "New Updated poltek action classifierUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				PoltekActionClassifierORGINAL.mlmodel,
+			);
+			target = 80ED42792E2788EE00B3CA32 /* New Updated poltek action classifierUITests */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		80ED42602E2788ED00B3CA32 /* New Updated poltek action classifier */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				80ED43E32E27AB6300B3CA32 /* Exceptions for "New Updated poltek action classifier" folder in "New Updated poltek action classifierTests" target */,
+				80ED43E42E27AB6300B3CA32 /* Exceptions for "New Updated poltek action classifier" folder in "New Updated poltek action classifierUITests" target */,
+			);
 			path = "New Updated poltek action classifier";
 			sourceTree = "<group>";
 		};
@@ -399,6 +420,8 @@
 				DEVELOPMENT_TEAM = Z8PS8WLYZ6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "New-Updated-poltek-action-classifier-Info.plist";
+				INFOPLIST_KEY_NSCameraUsageDescription = camera;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -428,6 +451,8 @@
 				DEVELOPMENT_TEAM = Z8PS8WLYZ6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "New-Updated-poltek-action-classifier-Info.plist";
+				INFOPLIST_KEY_NSCameraUsageDescription = camera;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
